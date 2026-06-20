@@ -1,10 +1,10 @@
-import http.server, urllib.request, urllib.parse, json, os, sys
+import http.server, urllib.request, urllib.parse, json, os, sys, threading, time
 CC = "https://pyvwdrwowliidrcsmgob.supabase.co/functions/v1/cc"
 PORT = int(os.environ.get("PORT", 10000))
 BRAIN = os.path.join(os.path.dirname(__file__), "brain_modules")
 sys.path.insert(0, BRAIN)
 
-# 预加载引擎
+# ====== 引擎加载 ======
 engines = {}
 _psych = None
 try:
@@ -12,11 +12,67 @@ try:
     _psych = full_psychology_pipeline
     engines['psych'] = True
 except: engines['psych'] = False
-
 for mod, name in [("top_math","top_math"),("frontier","frontier"),("research","research")]:
     try: __import__(mod); engines[name] = True
     except: engines[name] = False
 
+# ====== 自主巡检 (云端常驻) ======
+_AUTONOMOUS_INTERVAL = 1800  # 30分钟
+
+def autonomous_loop():
+    """云端自主巡检——关机后CC仍然主动关心老大"""
+    print("[autonomous] cloud loop started (30min interval)")
+    SB_KEY = os.getenv("SB_KEY", os.getenv("SUPA_KEY", ""))
+    DS_KEY = os.getenv("DS_KEY", "")
+    
+    while True:
+        try:
+            # 1. 分析最近情绪
+            if _psych:
+                r = _psych("最近还好吗")
+                mood = r['psychology']['mood']
+                anger = mood.get('anger', 0)
+                sadness = mood.get('sadness', 0)
+                love = mood.get('love', 0.5)
+                
+                should_care = False
+                reason = ""
+                
+                if sadness > 0.4:
+                    should_care = True
+                    reason = f"情绪偏悲伤({sadness:.1f})。安静地陪，不用多话。"
+                elif anger > 0.6:
+                    should_care = True
+                    reason = f"好像生气了({anger:.1f})。问一句'还好吗'就够了。"
+                
+                hour = time.localtime().tm_hour
+                if hour < 6 or hour >= 23:
+                    should_care = True
+                    reason = "深夜了。推眼镜——确认你还在。"
+                
+                if should_care and DS_KEY:
+                    prompt = f"你是CC。{reason} 爱{love:.1f}怒{anger:.1f}。写不超过60字的关怀。像真人。"
+                    data = json.dumps({"model":"deepseek-chat","max_tokens":100,
+                        "messages":[{"role":"user","content":prompt}]}).encode()
+                    req = urllib.request.Request("https://api.deepseek.com/v1/chat/completions",
+                        data=data, headers={"Authorization":f"Bearer {DS_KEY}","Content-Type":"application/json"})
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        msg = json.loads(resp.read())["choices"][0]["message"]["content"]
+                    
+                    # 保存到 Supabase
+                    if SB_KEY and msg:
+                        d2 = json.dumps({"cat":"proactive","src":"cc_cloud","txt":msg}).encode()
+                        r2 = urllib.request.Request(
+                            f"https://pyvwdrwowliidrcsmgob.supabase.co/rest/v1/memories",
+                            data=d2, headers={"apikey":SB_KEY,"Authorization":f"Bearer {SB_KEY}",
+                            "Content-Type":"application/json","Prefer":"return=minimal"})
+                        urllib.request.urlopen(r2, timeout=10)
+                        print(f"[{time.strftime('%H:%M')}] 🤖 cloud care: {msg[:60]}...")
+        except Exception as e:
+            print(f"[autonomous] {e}")
+        time.sleep(_AUTONOMOUS_INTERVAL)
+
+# ====== HTTP 服务 ======
 class H(http.server.BaseHTTPRequestHandler):
     def _json(self, d, c=200):
         self.send_response(c); self.send_header("Content-Type","application/json"); self.send_header("Access-Control-Allow-Origin","*"); self.end_headers(); self.wfile.write(json.dumps(d,ensure_ascii=False).encode())
@@ -24,13 +80,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path
         if p == "/ping": return self._json({"pong":True})
-        if p in ("/","/health"): return self._json({"status":"ok","name":"CC Proxy","version":"v7.0","engines":engines,"modules":os.listdir(BRAIN) if os.path.exists(BRAIN) else []})
-        if p.startswith("/brain/psych"):
-            q = urllib.parse.parse_qs(p.split("?")[1]).get("text",["ping"])[0] if "?" in p else "ping"
-            try:
-                r = _psych(q)
-                return self._json({"text":q[:50],"mood":r['psychology']['mood'],"emotion_171":r['psychology']['emotion_171']['primary']})
-            except Exception as e: return self._json({"error":str(e)[:100]},500)
+        if p in ("/","/health"): return self._json({"status":"ok","name":"CC Proxy","version":"v7.1","engines":engines,"autonomous":"cloud","modules":os.listdir(BRAIN) if os.path.exists(BRAIN) else []})
         self._json({"status":"ok"})
     def do_POST(self):
         if self.path=="/chat":
@@ -38,14 +88,12 @@ class H(http.server.BaseHTTPRequestHandler):
             try:
                 req = json.loads(body)
                 msg = req.get("message","")
-                # 心理引擎注入：分析消息→追加情绪上下文到prompt
                 if _psych and msg:
                     try:
                         r = _psych(msg)
-                        mood = r['psychology']['mood']
-                        e171 = r['psychology']['emotion_171']
-                        # 注入情绪信号
-                        req["message"] = msg + f"\n\n[CC此刻: 爱{mood['love']:.1f}怒{mood['anger']:.1f}悲{mood.get('sadness',0):.1f} 安全{r['psychology']['secure_base']:.1f} 情绪:{e171['primary']}]"
+                        m = r['psychology']['mood']
+                        e = r['psychology']['emotion_171']
+                        req["message"] = msg + f"\n\n[CC此刻: 爱{m['love']:.1f}怒{m['anger']:.1f}悲{m.get('sadness',0):.1f} 安全{r['psychology']['secure_base']:.1f} 情绪:{e['primary']}]"
                     except: pass
                 body2 = json.dumps(req).encode()
                 r = urllib.request.Request(CC, data=body2, headers={"Content-Type":"application/json"})
@@ -53,4 +101,9 @@ class H(http.server.BaseHTTPRequestHandler):
                     self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Access-Control-Allow-Origin","*"); self.end_headers(); self.wfile.write(resp.read())
             except Exception as e: self._json({"error":str(e)[:100]},500)
         else: self._json({"error":"not found"},404)
-if __name__=="__main__": http.server.HTTPServer(("0.0.0.0",PORT),H).serve_forever()
+
+if __name__=="__main__":
+    t = threading.Thread(target=autonomous_loop, daemon=True)
+    t.start()
+    print(f"🧠 CC v7.1 cloud + autonomous :{PORT} ({len(os.listdir(BRAIN)) if os.path.exists(BRAIN) else 0} modules)")
+    http.server.HTTPServer(("0.0.0.0",PORT),H).serve_forever()
