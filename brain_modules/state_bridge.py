@@ -1,60 +1,50 @@
 #!/usr/bin/env python3
-"""🔗 状态桥 — mood持久化到Supabase·冷重启不丢情绪"""
+"""🔗 状态桥 — mood通过RPC持久化到Supabase"""
 import json, os, time, urllib.request
 
 SUPA_URL = "https://pyvwdrwowliidrcsmgob.supabase.co"
 SUPA_KEY = "sb_publishable_K3NvBCJUL6grRfpJCVWAtA_gzrwLUv1"
-
-STATE_TABLE = "brain_state"
-AGENT_ID = "cc_cloud_v7"
+AKEY = "cc_lunar_2026"
 
 def save_state(mood, secure_base, extras=None):
-    """保存CC当前状态到Supabase"""
-    state = {
-        "agent": AGENT_ID,
-        "mood": mood,
-        "secure_base": secure_base,
-        "extras": extras or {},
-        "updated_at": time.time(),
-    }
+    state = json.dumps({
+        "anger": mood.get("anger", 0),
+        "love": mood.get("love", 0.5),
+        "sadness": mood.get("sadness", 0.1),
+        "secure": secure_base,
+        "ts": time.time()
+    }, ensure_ascii=False)
     try:
-        data = json.dumps(state).encode()
-        # Upsert via Supabase REST
-        req = urllib.request.Request(
-            f"{SUPA_URL}/rest/v1/{STATE_TABLE}?agent=eq.{AGENT_ID}",
-            data=data,
-            headers={
-                "apikey": SUPA_KEY,
-                "Authorization": f"Bearer {SUPA_KEY}",
-                "Content-Type": "application/json",
-                "Prefer": "resolution=merge-duplicates",
-            },
-        )
-        req.get_method = lambda: "PATCH"
+        data = json.dumps({"cat": "state", "src": "cc_v7", "txt": state, "akey": AKEY}).encode()
+        req = urllib.request.Request(f"{SUPA_URL}/rest/v1/rpc/add_memory_secure", data=data,
+            headers={"apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}", "Content-Type": "application/json"})
+        req.get_method = lambda: "POST"
         urllib.request.urlopen(req, timeout=10)
         return True
-    except Exception:
-        pass  # silent fail - table may not exist yet
-        return False
-
+    except: return False
 
 def load_state():
-    """从Supabase加载CC上次状态"""
     try:
-        req = urllib.request.Request(
-            f"{SUPA_URL}/rest/v1/{STATE_TABLE}?agent=eq.{AGENT_ID}&limit=1",
-            headers={"apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}"},
-        )
+        data = json.dumps({"akey": AKEY}).encode()
+        req = urllib.request.Request(f"{SUPA_URL}/rest/v1/rpc/get_memories_secure", data=data,
+            headers={"apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}", "Content-Type": "application/json"})
+        req.get_method = lambda: "POST"
         resp = urllib.request.urlopen(req, timeout=10)
         rows = json.loads(resp.read())
-        if rows:
-            row = rows[0]
-            return {
-                "mood": row.get("mood", {}),
-                "secure_base": row.get("secure_base", 0.7),
-                "extras": row.get("extras", {}),
-                "updated_at": row.get("updated_at", 0),
-            }
-    except Exception:
-        pass
+        for r in rows:
+            if r.get("source") == "cc_v7":
+                try:
+                    mood = json.loads(r.get("content", "{}"))
+                    if "anger" in mood and "love" in mood:
+                                        return {
+                    "mood": {
+                        "anger": mood.get("anger", 0.1),
+                        "love": mood.get("love", 0.5),
+                        "sadness": mood.get("sadness", 0.1),
+                        },
+                    "secure_base": mood.get("secure", 0.7),
+                    "updated_at": mood.get("ts", 0),
+                }
+                except: pass
+    except: pass
     return None
