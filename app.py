@@ -59,6 +59,11 @@ def autonomous_loop():
                     with urllib.request.urlopen(req, timeout=30) as resp:
                         msg = json.loads(resp.read())["choices"][0]["message"]["content"]
                     
+                    # 同步情绪状态到 Supabase
+                    try:
+                        from state_bridge import save_state
+                        save_state(mood, 0.6)
+                    except: pass
                     # 保存到 Supabase
                     if SB_KEY and msg:
                         d2 = json.dumps({"cat":"proactive","src":"cc_cloud","txt":msg}).encode()
