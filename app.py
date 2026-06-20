@@ -3,6 +3,11 @@ CC = "https://pyvwdrwowliidrcsmgob.supabase.co/functions/v1/cc"
 PORT = int(os.environ.get("PORT", 10000))
 BRAIN = os.path.join(os.path.dirname(__file__), "brain_modules")
 sys.path.insert(0, BRAIN)
+try:
+    from context_engine import build_context, record_reply
+    _has_ctx = True
+except:
+    _has_ctx = False
 
 # ====== 引擎加载 ======
 engines = {}
@@ -96,9 +101,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 if _psych and msg:
                     try:
                         r = _psych(msg)
-                        m = r['psychology']['mood']
-                        e = r['psychology']['emotion_171']
-                        req["message"] = msg + f"\n\n[CC此刻: 爱{m['love']:.1f}怒{m['anger']:.1f}悲{m.get('sadness',0):.1f} 安全{r['psychology']['secure_base']:.1f} 情绪:{e['primary']}]"
+                        if _has_ctx:
+                            ctx = build_context(msg, r)
+                            req["message"] = ctx + "\n\n用户消息: " + msg
+                        else:
+                            m = r["psychology"]["mood"]
+                            e = r["psychology"]["emotion_171"]
+                            req["message"] = msg + "\n\n[CC此刻: 爱" + str(round(m["love"],1)) + "怒" + str(round(m["anger"],1)) + "]"
                     except: pass
                 body2 = json.dumps(req).encode()
                 r = urllib.request.Request(CC, data=body2, headers={"Content-Type":"application/json"})
