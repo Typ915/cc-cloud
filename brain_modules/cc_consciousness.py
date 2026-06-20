@@ -8,7 +8,7 @@ from datetime import datetime
 DS_API = "https://api.deepseek.com/v1/chat/completions"
 DS_KEY = os.getenv("DS_KEY", os.getenv("DS_KEY", ""))
 SB_URL = "https://pyvwdrwowliidrcsmgob.supabase.co"
-SB_KEY = os.getenv("SB_KEY","")
+SB_KEY = "sb_secret_xAWNaDOXIEBFcr3t1AB8KA_NI5q31Et"
 AKEY = "cc_lunar_2026"
 CONSCIOUS_LOG = "/mnt/c/Users/Administrator/Desktop/办公室/意识流日志.md"
 
