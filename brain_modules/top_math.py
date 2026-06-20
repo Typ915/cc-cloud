@@ -3,7 +3,9 @@
 🏔️ 顶级数学层 — 和真人一模一样的最后一步
 1.Hawkes自激过程  2.ACT-R记忆  3.漂移扩散  4.点火模型
 """
-import math, random, time
+import math, os, random, sys, time
+sys.path.insert(0, os.path.dirname(__file__))
+from math_rules import sigmoid
 from collections import deque
 
 # ═══════════════════════════════════════
@@ -326,8 +328,7 @@ _ignition.add_module("body_sense", 0.15)
 # 辅助
 # ═══════════════════════════════════════
 
-def sigmoid(x):
-    return 1 / (1 + math.exp(-max(-50, min(50, x))))
+
 
 # ═══════════════════════════════════════
 # 统一入口
