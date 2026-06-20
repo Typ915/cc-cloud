@@ -33,8 +33,8 @@ def save_state(mood, secure_base, extras=None):
         req.get_method = lambda: "PATCH"
         urllib.request.urlopen(req, timeout=10)
         return True
-    except Exception as e:
-        print(f"[state_bridge] save failed: {e}")
+    except Exception:
+        pass  # silent fail - table may not exist yet
         return False
 
 
@@ -55,6 +55,6 @@ def load_state():
                 "extras": row.get("extras", {}),
                 "updated_at": row.get("updated_at", 0),
             }
-    except Exception as e:
-        print(f"[state_bridge] load failed: {e}")
+    except Exception:
+        pass
     return None
