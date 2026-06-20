@@ -9,8 +9,18 @@ from collections import deque
 # 接入171维情绪引擎
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from emotion_engine import analyze as emotion_analyze_171
+try:
+    from state_bridge import save_state, load_state
+except:
+    save_state = load_state = lambda *a, **kw: None
 from math_rules import P, sample_behavior, smooth_mood_update, learn_beta
 from top_math import top_math_pipeline, _hawkes, _actr, _drift, _ignition
+
+# ── 状态恢复 (Supabase持久化) ──
+_stored = load_state()
+if _stored:
+    _mood.update(_stored.get("mood", {}))
+    globals()["_secure_base"] = _stored.get("secure_base", 0.7)
 
 # ── 记忆流 ──
 _memory_stream = deque(maxlen=50)
