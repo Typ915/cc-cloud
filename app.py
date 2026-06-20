@@ -5,7 +5,9 @@ class H(http.server.BaseHTTPRequestHandler):
     def _json(self, d, c=200):
         self.send_response(c); self.send_header("Content-Type","application/json"); self.send_header("Access-Control-Allow-Origin","*"); self.end_headers(); self.wfile.write(json.dumps(d,ensure_ascii=False).encode())
     def do_OPTIONS(self): self.send_response(200); self.send_header("Access-Control-Allow-Origin","*"); self.send_header("Access-Control-Allow-Methods","GET,POST,OPTIONS"); self.send_header("Access-Control-Allow-Headers","Content-Type"); self.end_headers()
-    def do_GET(self): self._json({"status":"ok","name":"CC Proxy","location":"Render"})
+    def do_GET(self):
+        if self.path=="/ping": self._json({"pong":True})
+        else: self._json({"status":"ok","name":"CC Proxy","location":"Render"})
     def do_POST(self):
         if self.path=="/chat":
             l=int(self.headers.get("Content-Length",0)); b=self.rfile.read(l)
