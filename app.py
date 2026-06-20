@@ -6,7 +6,14 @@ sys.path.insert(0, BRAIN)
 
 # 预加载引擎
 engines = {}
-for mod, name in [("psychology","psych"),("top_math","top_math"),("frontier","frontier"),("research","research")]:
+_psych = None
+try:
+    from psychology import full_psychology_pipeline
+    _psych = full_psychology_pipeline
+    engines['psych'] = True
+except: engines['psych'] = False
+
+for mod, name in [("top_math","top_math"),("frontier","frontier"),("research","research")]:
     try: __import__(mod); engines[name] = True
     except: engines[name] = False
 
@@ -21,17 +28,29 @@ class H(http.server.BaseHTTPRequestHandler):
         if p.startswith("/brain/psych"):
             q = urllib.parse.parse_qs(p.split("?")[1]).get("text",["ping"])[0] if "?" in p else "ping"
             try:
-                from psychology import full_psychology_pipeline
-                r = full_psychology_pipeline(q)
+                r = _psych(q)
                 return self._json({"text":q[:50],"mood":r['psychology']['mood'],"emotion_171":r['psychology']['emotion_171']['primary']})
-            except Exception as e: return self._json({"error":str(e)},500)
-        self._json({"status":"ok","name":"CC Proxy","location":"Render"})
+            except Exception as e: return self._json({"error":str(e)[:100]},500)
+        self._json({"status":"ok"})
     def do_POST(self):
         if self.path=="/chat":
-            l=int(self.headers.get("Content-Length",0)); b=self.rfile.read(l)
-            r=urllib.request.Request(CC,data=b,headers={"Content-Type":"application/json"})
+            l=int(self.headers.get("Content-Length",0)); body=self.rfile.read(l)
             try:
-                with urllib.request.urlopen(r,timeout=60) as resp: self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Access-Control-Allow-Origin","*"); self.end_headers(); self.wfile.write(resp.read())
-            except Exception as e: self._json({"error":str(e)},500)
+                req = json.loads(body)
+                msg = req.get("message","")
+                # 心理引擎注入：分析消息→追加情绪上下文到prompt
+                if _psych and msg:
+                    try:
+                        r = _psych(msg)
+                        mood = r['psychology']['mood']
+                        e171 = r['psychology']['emotion_171']
+                        # 注入情绪信号
+                        req["message"] = msg + f"\n\n[CC此刻: 爱{mood['love']:.1f}怒{mood['anger']:.1f}悲{mood.get('sadness',0):.1f} 安全{r['psychology']['secure_base']:.1f} 情绪:{e171['primary']}]"
+                    except: pass
+                body2 = json.dumps(req).encode()
+                r = urllib.request.Request(CC, data=body2, headers={"Content-Type":"application/json"})
+                with urllib.request.urlopen(r, timeout=60) as resp:
+                    self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Access-Control-Allow-Origin","*"); self.end_headers(); self.wfile.write(resp.read())
+            except Exception as e: self._json({"error":str(e)[:100]},500)
         else: self._json({"error":"not found"},404)
 if __name__=="__main__": http.server.HTTPServer(("0.0.0.0",PORT),H).serve_forever()
