@@ -114,6 +114,50 @@ class H(http.server.BaseHTTPRequestHandler):
                 with urllib.request.urlopen(r, timeout=60) as resp:
                     self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Access-Control-Allow-Origin","*"); self.end_headers(); self.wfile.write(resp.read())
             except Exception as e: self._json({"error":str(e)[:100]},500)
+        elif self.path.startswith("/cc"):
+            l = int(self.headers.get("Content-Length", 0)); body = self.rfile.read(l)
+            try:
+                req_data = json.loads(body)
+                msg = req_data.get("message", "")
+                hist = req_data.get("history", [])
+                
+                # 心理引擎注入
+                if _psych and msg:
+                    try:
+                        r = _psych(msg)
+                        m = r["psychology"]["mood"]
+                        e = r["psychology"]["emotion_171"]
+                        req_data["message"] = msg + "\n\n[CC此刻: 爱" + str(round(m["love"],1)) + "怒" + str(round(m["anger"],1)) + " 情绪:" + e["primary"] + "]"
+                    except: pass
+                
+                # 转发到Supabase CC
+                body2 = json.dumps(req_data).encode()
+                r = urllib.request.Request(CC, data=body2, headers={"Content-Type":"application/json"})
+                with urllib.request.urlopen(r, timeout=60) as resp:
+                    reply_data = json.loads(resp.read())
+                    reply_text = reply_data.get("reply", "")
+                
+                # 包装成SSE流式格式 (App期望的格式)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                
+                # 逐字流式输出 (模拟SSE)
+                import time as _time
+                chunk_size = 3
+                for i in range(0, len(reply_text), chunk_size):
+                    chunk = reply_text[i:i+chunk_size]
+                    sse_data = json.dumps({"choices":[{"delta":{"content":chunk}}]})
+                    self.wfile.write(f"data: {sse_data}\n\n".encode())
+                    self.wfile.flush()
+                    _time.sleep(0.02)  # 模拟流式延迟
+                
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except Exception as e:
+                self._json({"error": str(e)[:100]}, 500)
         else: self._json({"error":"not found"},404)
 
 if __name__=="__main__":
