@@ -138,7 +138,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 
                 # 转发到 Supabase cc-flash (Flash 模型)
                 CC_FLASH = "https://pyvwdrwowliidrcsmgob.supabase.co/functions/v1/cc-flash"
-                sb_key = os.getenv("SB_KEY", os.getenv("SUPA_KEY", ""))
+                sb_key = os.getenv("SB_KEY", os.getenv("SUPA_KEY", "sb_publishable_K3NvBCJUL6grRfpJCVWAtA_gzrwLUv1"))
                 body2 = json.dumps(req_data).encode()
                 r = urllib.request.Request(CC_FLASH, data=body2,
                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {sb_key}"})
