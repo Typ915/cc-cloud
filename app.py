@@ -120,6 +120,12 @@ class H(http.server.BaseHTTPRequestHandler):
                 req_data = json.loads(body)
                 msg = req_data.get("message", "")
                 hist = req_data.get("history", [])
+                # 去重: 3秒内相同消息跳过
+                now_ts = time.time()
+                if hasattr(self, "_last_msg") and msg == self._last_msg.get("text","") and now_ts - self._last_msg.get("ts",0) < 3:
+                    self.send_response(200); self.send_header("Content-Type","text/event-stream"); self.send_header("Access-Control-Allow-Origin","*"); self.end_headers()
+                    self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush(); return
+                H._last_msg = {"text": msg, "ts": now_ts}
                 
                 # 心理引擎注入
                 if _psych and msg:
