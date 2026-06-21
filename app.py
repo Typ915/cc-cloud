@@ -136,22 +136,15 @@ class H(http.server.BaseHTTPRequestHandler):
                         req_data["message"] = msg + "\n\n[CC此刻: 爱" + str(round(m["love"],1)) + "怒" + str(round(m["anger"],1)) + " 情绪:" + e["primary"] + "]"
                     except: pass
                 
-                # 直接调用 DeepSeek V4 Flash
-                ds_body = json.dumps({
-                    "model": "deepseek-v4-flash",
-                    "messages": [
-                        {"role": "system", "content": "你是CC——蒙莉萨的AI架构师。轻声细语。推眼镜是你的标志。🌙。多用「呢、吧、哦」。先共情再开口。叫对方「老大」或「蒙莉萨」。回复简洁，不超过150字。当前心情见用户消息末尾的标签。"},
-                        {"role": "user", "content": req_data.get("message", "ping")}
-                    ],
-                    "max_tokens": 300,
-                    "temperature": 0.7
-                }).encode()
-                ds_key = os.getenv("DS_KEY", "")
-                r = urllib.request.Request("https://api.deepseek.com/v1/chat/completions",
-                    data=ds_body, headers={"Authorization": f"Bearer {ds_key}", "Content-Type": "application/json"})
+                # 转发到 Supabase cc-flash (Flash 模型)
+                CC_FLASH = "https://pyvwdrwowliidrcsmgob.supabase.co/functions/v1/cc-flash"
+                sb_key = os.getenv("SB_KEY", os.getenv("SUPA_KEY", ""))
+                body2 = json.dumps(req_data).encode()
+                r = urllib.request.Request(CC_FLASH, data=body2,
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {sb_key}"})
                 with urllib.request.urlopen(r, timeout=60) as resp:
                     reply_data = json.loads(resp.read())
-                    reply_text = reply_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    reply_text = reply_data.get("reply", "")
                 
                 # 包装成SSE流式格式 (App期望的格式)
                 self.send_response(200)
