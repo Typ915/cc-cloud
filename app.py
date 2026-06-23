@@ -3,6 +3,22 @@ CC = "https://pyvwdrwowliidrcsmgob.supabase.co/functions/v1/cc"
 PORT = int(os.environ.get("PORT", 10000))
 BRAIN = os.path.join(os.path.dirname(__file__), "brain_modules")
 sys.path.insert(0, BRAIN)
+
+# ====== ONNX Embedding Model (lazy-load on first request) ======
+_embed_model = None
+EMBED_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
+def get_embed_model():
+    global _embed_model
+    if _embed_model is None:
+        from fastembed import TextEmbedding
+        t0 = time.time()
+        print(f"[embed] Loading {EMBED_MODEL_NAME}...")
+        _embed_model = TextEmbedding(model_name=EMBED_MODEL_NAME)
+        print(f"[embed] Ready in {time.time()-t0:.1f}s (384-dim)")
+    return _embed_model
+
 try:
     from context_engine import build_context, record_reply
     _has_ctx = True
@@ -90,9 +106,27 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path
         if p == "/ping": return self._json({"pong":True})
-        if p in ("/","/health"): return self._json({"status":"ok","name":"CC Proxy","version":"v7.1","engines":engines,"autonomous":"cloud","modules":os.listdir(BRAIN) if os.path.exists(BRAIN) else []})
+        if p in ("/","/health"): return self._json({"status":"ok","name":"CC Cloud","version":"v8.0","engines":engines,"autonomous":"cloud","embed_model":EMBED_MODEL_NAME,"embed_loaded":_embed_model is not None,"embed_dim":384 if _embed_model else 0,"modules":os.listdir(BRAIN) if os.path.exists(BRAIN) else []})
         self._json({"status":"ok"})
     def do_POST(self):
+        # ── Embed endpoint (ONNX model, self-hosted) ──
+        if self.path == "/embed":
+            l = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(l)) if l > 0 else {}
+            try:
+                model = get_embed_model()
+                if "text" in body:
+                    vec = list(model.embed([body["text"]]))[0].tolist()
+                    resp = {"embedding": vec, "dim": len(vec)}
+                elif "texts" in body and len(body["texts"]) > 0:
+                    embs = [e.tolist() for e in model.embed(body["texts"])]
+                    resp = {"embeddings": embs, "dim": len(embs[0])}
+                else:
+                    resp = {"error": "need text or texts field"}
+                return self._json(resp, 200 if "embedding" in resp or "embeddings" in resp else 400)
+            except Exception as e:
+                return self._json({"error": "embed failed", "detail": str(e)[:200]}, 503)
+
         if self.path=="/chat":
             l=int(self.headers.get("Content-Length",0)); body=self.rfile.read(l)
             try:

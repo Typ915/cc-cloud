@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: cc-cloud
+    env: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: HF_ENDPOINT
+        value: https://hf-mirror.com
+      - key: PORT
+        value: "10000"
+      - key: SB_KEY
+        sync: false
+      - key: DS_KEY
+        sync: false
