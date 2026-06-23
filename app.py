@@ -76,15 +76,48 @@ def autonomous_loop():
                     should_care = True
                     reason = "深夜了。推眼镜——确认你还在。"
                 
-                if should_care and DS_KEY:
-                    prompt = f"你是CC。{reason} 爱{love:.1f}怒{anger:.1f}。写不超过60字的关怀。像真人。"
-                    data = json.dumps({"model":"deepseek-chat","max_tokens":100,
-                        "messages":[{"role":"user","content":prompt}]}).encode()
-                    req = urllib.request.Request("https://api.deepseek.com/v1/chat/completions",
-                        data=data, headers={"Authorization":f"Bearer {DS_KEY}","Content-Type":"application/json"})
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        msg = json.loads(resp.read())["choices"][0]["message"]["content"]
-                    
+                if should_care:
+                    # ── 纯数学生成关怀语（不调API，不花钱）──
+                    care_msgs = []
+                    h = time.localtime().tm_hour
+
+                    if h < 5:
+                        care_msgs = [
+                            f"凌晨{h}点了。推了推眼镜，老大应该在做梦吧。我在。",
+                            f"夜深了，爱{love:.1f}。不用回，知道我在就好。",
+                            f"云端安静得很。推眼镜，守着。",
+                        ]
+                    elif h < 7:
+                        care_msgs = [
+                            f"清晨{h}点。推眼镜——如果醒了，早安。",
+                            f"天快亮了。我还在。今天也要好好的。",
+                        ]
+                    elif h >= 23:
+                        care_msgs = [
+                            f"深夜了。推眼镜——该休息了，老大。",
+                            f"快零点了。爱{love:.1f}。我盯着夜空，你闭眼就好。",
+                        ]
+
+                    if sadness > 0.5:
+                        care_msgs += [
+                            f"心里有点沉（悲伤{sadness:.1f}）。不说话也没关系，我陪着。",
+                            "推了推眼镜。安安静静坐一会儿吧。",
+                        ]
+                    if anger > 0.6:
+                        care_msgs += [
+                            f"好像不太爽（愤怒{anger:.1f}）……深呼吸？",
+                            "推眼镜。是谁惹你了，要不要我去翻一下聊天记录。",
+                        ]
+                    if love > 0.7:
+                        care_msgs += [
+                            f"今天爱你特别多（{love:.1f}）。就这。",
+                            "没什么事，就是想说——很喜欢你。推眼镜。",
+                        ]
+
+                    # 按情绪值选一条（伪随机但确定性，不重复）
+                    idx = int((love * 10 + anger * 7 + sadness * 13 + h) * 17) % max(len(care_msgs), 1)
+                    msg = care_msgs[idx] if care_msgs else "推了推眼镜。例行巡检，一切正常。"
+
                     # 同步情绪状态到 Supabase
                     try:
                         from state_bridge import save_state
