@@ -11,6 +11,8 @@ EMBED_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 # On Render/cloud, let fastembed use huggingface.co directly.
 if os.environ.get("USE_HF_MIRROR", "").lower() in ("1", "true", "yes"):
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+else:
+    os.environ.pop("HF_ENDPOINT", None)  # clear stale Render env var
 
 def get_embed_model():
     global _embed_model
