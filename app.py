@@ -17,11 +17,18 @@ else:
 def get_embed_model():
     global _embed_model
     if _embed_model is None:
-        from fastembed import TextEmbedding
-        t0 = time.time()
-        print(f"[embed] Loading {EMBED_MODEL_NAME}...")
-        _embed_model = TextEmbedding(model_name=EMBED_MODEL_NAME)
-        print(f"[embed] Ready in {time.time()-t0:.1f}s (384-dim)")
+        try:
+            from fastembed import TextEmbedding
+            t0 = time.time()
+            print(f"[embed] Loading {EMBED_MODEL_NAME}...")
+            _embed_model = TextEmbedding(model_name=EMBED_MODEL_NAME)
+            print(f"[embed] Ready in {time.time()-t0:.1f}s (384-dim)")
+        except Exception as e:
+            print(f"[embed] Failed to load model: {e}", file=sys.stderr)
+            _embed_model = False  # mark as failed, don't retry
+            raise
+    if _embed_model is False:
+        raise RuntimeError("Embedding model unavailable (OOM or download failed)")
     return _embed_model
 
 try:
@@ -282,7 +289,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path
         if p == "/ping": return self._json({"pong":True})
-        if p in ("/","/health"): return self._json({"status":"ok","name":"CC Cloud","version":"v9.0","engines":engines,"autonomous":"life","embed_model":EMBED_MODEL_NAME,"embed_loaded":_embed_model is not None,"embed_dim":384 if _embed_model else 0,"life":{"wake":round(_cc_life["wake_base"]+_cc_life["sleep_debt"],1),"sleep_debt":round(_cc_life["sleep_debt"],2),"cycles":_cc_life["cycles"],"diary":_cc_life["diary_count"]},"modules":os.listdir(BRAIN) if os.path.exists(BRAIN) else []})
+        if p in ("/","/health"): return self._json({"status":"ok","name":"CC Cloud","version":"v10.0","engines":engines,"autonomous":"life","embed_model":EMBED_MODEL_NAME,"embed_loaded":_embed_model is not None and _embed_model is not False,"embed_dim":384 if (_embed_model is not None and _embed_model is not False) else 0,"life":{"wake":round(_cc_life["wake_base"]+_cc_life["sleep_debt"],1),"sleep_debt":round(_cc_life["sleep_debt"],2),"cycles":_cc_life["cycles"],"diary":_cc_life["diary_count"]},"modules":os.listdir(BRAIN) if os.path.exists(BRAIN) else []})
         self._json({"status":"ok"})
     def do_POST(self):
         # ── Embed endpoint (ONNX model, self-hosted) ──
@@ -295,8 +302,12 @@ class H(http.server.BaseHTTPRequestHandler):
                     vec = list(model.embed([body["text"]]))[0].tolist()
                     resp = {"embedding": vec, "dim": len(vec)}
                 elif "texts" in body and len(body["texts"]) > 0:
-                    embs = [e.tolist() for e in model.embed(body["texts"])]
-                    resp = {"embeddings": embs, "dim": len(embs[0])}
+                    # 逐条嵌入，避免批量 OOM（Render 免费层 512MB）
+                    embs = []
+                    for text in body["texts"]:
+                        vec = list(model.embed([str(text)[:2000]]))[0].tolist()
+                        embs.append(vec)
+                    resp = {"embeddings": embs, "dim": len(embs[0]) if embs else 0}
                 else:
                     resp = {"error": "need text or texts field"}
                 return self._json(resp, 200 if "embedding" in resp or "embeddings" in resp else 400)
@@ -384,5 +395,5 @@ class H(http.server.BaseHTTPRequestHandler):
 if __name__=="__main__":
     t = threading.Thread(target=autonomous_loop, daemon=True)
     t.start()
-    print(f"💫 CC v9.0 life engine + embed :{PORT} ({len(os.listdir(BRAIN)) if os.path.exists(BRAIN) else 0} modules)")
+    print(f"💫 CC v10.0 life engine + embed (safe-batch) :{PORT} ({len(os.listdir(BRAIN)) if os.path.exists(BRAIN) else 0} modules)")
     http.server.HTTPServer(("0.0.0.0",PORT),H).serve_forever()
