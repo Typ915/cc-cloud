@@ -7,7 +7,10 @@ sys.path.insert(0, BRAIN)
 # ====== ONNX Embedding Model (lazy-load on first request) ======
 _embed_model = None
 EMBED_MODEL_NAME = "BAAI/bge-small-en-v1.5"
-os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+# Only use hf-mirror if explicitly requested (WSL behind GFW).
+# On Render/cloud, let fastembed use huggingface.co directly.
+if os.environ.get("USE_HF_MIRROR", "").lower() in ("1", "true", "yes"):
+    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 def get_embed_model():
     global _embed_model
